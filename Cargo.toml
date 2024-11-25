@@ -1,0 +1,20 @@
+[package]
+name = "click_android"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+i-slint-backend-winit = "1.8.0"
+shadow-rs = "0.36.0"
+slint = "1.8.0"
+
+[build-dependencies]
+shadow-rs = "0.36.0"
+slint-build = "1.8.0"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,70 @@
+export component main_win inherits Window {
+    callback touch_position;
+    callback move_position;
+    callback hover_ts;
+    callback return_back;
+    out property <[length]> list_of_position:[area.pressed-x, area.pressed-y];
+    out property <length> tx: area.pressed-x;
+    out property <length> ty: area.pressed-y;
+    out property <length> mx: area.mouse-x;
+    out property <length> my: area.mouse-y;
+    in property <bool> tp: area.pressed;
+    in property <image> srcimg <=> img.source;
+    in property <length> d_w <=> area.width;
+    in property <length> d_h <=> area.height;
+    in property <string> appname <=> root.title;
+	
+	
+    //preferred-width: 360px;
+    //preferred-height: 640px;
+	
+    width: area.width;
+    height: area.height + 25px;
+    icon: @image-url("logo.png");
+    VerticalLayout {
+        area := TouchArea {
+            width: 10px;
+            height: 10px;
+            img := Image {
+                width: parent.width;
+                image-rendering: pixelated;
+            }
+
+            clicked => {
+                root.touch_position();
+            }
+            moved => {
+                root.move_position();
+            }
+            pointer-event(e) => {
+                if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                    root.return_back();
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    alignment: start;
+                    Text {
+                        text: "Author:ThinJade";
+                    }
+                }
+            }
+
+            VerticalLayout {
+			//x: root.width - 180px;
+              alignment: center;
+                HorizontalLayout {
+                    alignment: end;
+                    Text {
+                        text: "";
+                    }
+                }
+            }
+        }
+    }
+}
