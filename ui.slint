@@ -1,8 +1,12 @@
 export component main_win inherits Window {
-    callback touch_position;
-    callback move_position;
-    callback hover_ts;
-    callback return_back;
+    callback left_click;
+    callback left_move;
+    callback right_click;
+    callback left_click_down;
+	/*
+	// no need `left_click_up`, use `let_click`
+	callback left_click_up;
+	*/
     out property <[length]> list_of_position:[area.pressed-x, area.pressed-y];
     out property <length> tx: area.pressed-x;
     out property <length> ty: area.pressed-y;
@@ -31,14 +35,16 @@ export component main_win inherits Window {
             }
 
             clicked => {
-                root.touch_position();
+                root.left_click();
             }
             moved => {
-                root.move_position();
+                root.left_move();
             }
             pointer-event(e) => {
                 if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
-                    root.return_back();
+                    root.right_click();
+                } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                    root.left_click_down();
                 }
             }
         }
@@ -61,7 +67,7 @@ export component main_win inherits Window {
                 HorizontalLayout {
                     alignment: end;
                     Text {
-                        text: "";
+                        text: "SNBC西北服务中心";
                     }
                 }
             }

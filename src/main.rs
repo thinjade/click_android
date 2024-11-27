@@ -5,12 +5,20 @@ use shadow_rs::shadow;
 use slint::Timer;
 use slint::TimerMode;
 //use slint::VecModel;
+use image::imageops::FilterType;
+//use image::ImageFormat;
+use image::ImageReader;
+use slint::Image;
+use slint::Rgba8Pixel;
+use slint::SharedPixelBuffer;
 use std::cell::RefCell;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+//use std::fs::File;
+use std::io::Cursor;
+//use std::io::Write;
+//use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
+use std::time::Instant;
 
 slint::include_modules!();
 
@@ -25,10 +33,13 @@ fn main() {
     let display_size = display.trim().split(" ").collect::<Vec<_>>()[2]
         .split("x")
         .collect::<Vec<_>>();
-    //println!("W:{},H:{}", display_size[0], display_size[1]);
+    let img_w = display_size[0].parse::<i32>().unwrap().div_euclid(3);
+    let img_h = display_size[1].parse::<i32>().unwrap().div_euclid(3);
 
-    let drag_f = Rc::new(RefCell::new(false)); //swipe flag
+    let drag_f = Rc::new(RefCell::new(false)); //drag flag
 
+    let click_down = Rc::new(RefCell::new(Instant::now()));
+    let click_up = Rc::new(RefCell::new(Instant::now()));
     let app = main_win::new().unwrap();
     let app_weak = app.as_weak();
     app_weak.unwrap().set_appname(
@@ -48,17 +59,15 @@ fn main() {
         });
 
     let app_weak = app.as_weak();
-    app_weak
-        .unwrap()
-        .set_d_w(display_size[0].parse::<i32>().unwrap().div_euclid(3) as f32);
-    app_weak
-        .unwrap()
-        .set_d_h(display_size[1].parse::<i32>().unwrap().div_euclid(3) as f32);
+    app_weak.unwrap().set_d_w(img_w as f32);
+    app_weak.unwrap().set_d_h(img_h as f32);
 
     //handle click or  swipe event
     let app_weak = app.as_weak();
     let drag_flag = drag_f.clone();
-    app.on_touch_position(move || {
+    let click_down_clone = click_down.clone();
+    let click_up_clone = click_up.clone();
+    app.on_left_click(move || {
         /*
         let touch_pos = app_weak.unwrap().get_list_of_position();
         let pos = touch_pos.as_any().downcast_ref::<VecModel<f32>>().unwrap();
@@ -67,22 +76,13 @@ fn main() {
             println!("pos:{}", i);
         }
         */
-        // println!("touch:1-{}", drag_flag.borrow());
+        *click_up_clone.borrow_mut() = Instant::now();
+        let press_time = click_up_clone
+            .borrow()
+            .duration_since(*(click_down_clone.borrow()))
+            .as_millis();
+
         if *drag_flag.borrow() {
-            /*
-                        println!(
-                            "before:x:{:?},y:{:?}",
-                            app_weak.unwrap().get_tx(),
-                            app_weak.unwrap().get_ty()
-                        );
-                        println!(
-                            "after:x:{:?},y:{:?}",
-                            app_weak.unwrap().get_mx(),
-                            app_weak.unwrap().get_my()
-                        );
-                        println!("touch:2-{}", drag_flag.borrow());
-                        println!("drag");
-            */
             Command::new("adb")
                 .args([
                     "shell",
@@ -103,7 +103,25 @@ fn main() {
                 app_weak.unwrap().get_my()
             );
             *drag_flag.borrow_mut() = false;
-            // println!("touch:3-{}", drag_flag.borrow());
+        } else if press_time > 1000 {
+            Command::new("adb")
+                .args([
+                    "shell",
+                    "input",
+                    "swipe",
+                    &{ app_weak.unwrap().get_tx() as i32 * 3 }.to_string(),
+                    &{ app_weak.unwrap().get_ty() as i32 * 3 }.to_string(),
+                    &{ app_weak.unwrap().get_tx() as i32 * 3 }.to_string(),
+                    &{ app_weak.unwrap().get_ty() as i32 * 3 }.to_string(),
+                    "1000",
+                ])
+                .status()
+                .unwrap();
+            println!(
+                "Long press: {} {}",
+                app_weak.unwrap().get_tx(),
+                app_weak.unwrap().get_ty()
+            );
         } else {
             Command::new("adb")
                 .args([
@@ -125,13 +143,17 @@ fn main() {
 
     //handle swipe event, set swipe flag
     let drag_flag = drag_f.clone();
-    app.on_move_position(move || {
+    app.on_left_move(move || {
         *drag_flag.borrow_mut() = true;
-        // println!("in move:{}", drag_flag.borrow());
+    });
+
+    let click_down_clone = click_down.clone();
+    app.on_left_click_down(move || {
+        *click_down_clone.borrow_mut() = Instant::now();
     });
 
     // right click
-    app.on_return_back(move || {
+    app.on_right_click(move || {
         println!("Right click");
         Command::new("adb")
             .args(["shell", "input", "keyevent", "KEYCODE_BACK"])
@@ -146,15 +168,53 @@ fn main() {
         TimerMode::Repeated,
         std::time::Duration::from_millis(1),
         move || {
+            let app_weak_clone = app_weak.clone();
             let output = Command::new("adb")
                 .args(["exec-out", "screencap -p"])
                 .output()
                 .unwrap();
+
+            let screen_image = ImageReader::new(Cursor::new(&output.stdout))
+                .with_guessed_format()
+                .unwrap();
+            /*
             let mut f = File::create("screen.png").unwrap();
             f.write_all(&output.stdout).unwrap();
             app_weak
                 .upgrade_in_event_loop(|app| {
                     app.set_srcimg(slint::Image::load_from_path(Path::new("screen.png")).unwrap());
+                })
+                .unwrap();
+                */
+
+            let image_data = screen_image.decode().unwrap().into_rgba8();
+            let image_scale = image::imageops::resize(
+                &image_data,
+                img_w as u32,
+                img_h as u32,
+                FilterType::Triangle,
+            );
+            let buffer = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(
+                image_scale.as_raw(),
+                image_scale.width(),
+                image_scale.height(),
+            );
+            /*
+            match app_weak_clone.upgrade() {
+                Some(a) => {
+                    let image = Image::from_rgba8(buffer);
+                    a.set_srcimg(image);
+                }
+                None => {
+                    println!("set image error");
+                }
+            }
+            */
+
+            app_weak_clone
+                .upgrade_in_event_loop(|app| {
+                    let image = Image::from_rgba8_premultiplied(buffer);
+                    app.set_srcimg(image);
                 })
                 .unwrap();
         },
